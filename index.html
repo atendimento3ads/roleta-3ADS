@@ -314,7 +314,7 @@ body.presenting header{border-color:transparent}
   <div class="d-body">
     <div class="pane active" id="pane-brindes">
       <h4>Brindes e regras</h4>
-      <p class="desc">Brinde comum sai por sorteio, de acordo com o peso. Brinde controlado sai exatamente uma vez a cada N giros, em uma posição aleatória dentro de cada bloco, até acabar o estoque. Estoque vazio significa ilimitado.</p>
+      <p class="desc">Cada brinde deixa de ser sorteado automaticamente quando o estoque chega a zero. O peso considera a quantidade restante, distribuindo as chances entre todas as unidades disponíveis.</p>
       <div id="prizeList"></div>
       <div class="btns"><button class="btn" id="btnAdd">Adicionar brinde</button></div>
     </div>
@@ -344,13 +344,17 @@ body.presenting header{border-color:transparent}
 <div class="toast" id="toast"></div>
 
 <script>
-const KEY='roleta3ads.v1';
+const KEY='roleta3ads.v2';
 const DEFAULT_PRIZES=[
-  {id:'copo',name:'Copo 3ADS',label:'Copo 3ADS',color:'#000AFF',type:'comum',weight:1,every:10,stock:null,reps:2,active:true},
-  {id:'caneta',name:'Caneta 3ADS',label:'Caneta',color:'#007CFF',type:'comum',weight:1,every:10,stock:null,reps:2,active:true},
-  {id:'bloco',name:'Bloco de anotações',label:'Bloco de notas',color:'#0A1640',type:'comum',weight:1,every:10,stock:null,reps:2,active:true},
-  {id:'workshop',name:'Ingresso para o Workshop de IA',label:'Workshop de IA',color:'#93C5FD',type:'controlado',weight:1,every:100,stock:1,reps:1,active:true},
-  {id:'kit',name:'Kit completo',label:'Kit completo',color:'#FFFFFF',type:'controlado',weight:1,every:10,stock:null,reps:1,active:true}
+  {id:'kit',name:'Kit completo',label:'Kit completo',color:'#FFFFFF',type:'comum',weight:1,every:10,stock:2,reps:1,active:true},
+  {id:'mousepad',name:'Mousepad',label:'Mousepad',color:'#00C2FF',type:'comum',weight:1,every:10,stock:6,reps:1,active:true},
+  {id:'copo',name:'Copo 3ADS',label:'Copo 3ADS',color:'#000AFF',type:'comum',weight:1,every:10,stock:6,reps:1,active:true},
+  {id:'caneta',name:'Caneta 3ADS',label:'Caneta',color:'#007CFF',type:'comum',weight:1,every:10,stock:6,reps:1,active:true},
+  {id:'bloco',name:'Bloco de notas',label:'Bloco de notas',color:'#0A1640',type:'comum',weight:1,every:10,stock:6,reps:1,active:true},
+  {id:'ecobag',name:'Ecobag',label:'Ecobag',color:'#14B8A6',type:'comum',weight:1,every:10,stock:6,reps:1,active:true},
+  {id:'squeeze',name:'Squeeze',label:'Squeeze',color:'#8B5CF6',type:'comum',weight:1,every:10,stock:2,reps:1,active:true},
+  {id:'bone',name:'Boné 3ADS',label:'Boné 3ADS',color:'#F59E0B',type:'comum',weight:1,every:10,stock:2,reps:1,active:true},
+  {id:'workshop',name:'Ingresso para o Workshop de IA',label:'Workshop de IA',color:'#FF4D8D',type:'comum',weight:1,every:10,stock:1,reps:1,active:true}
 ];
 const clone=o=>JSON.parse(JSON.stringify(o));
 function freshState(){return{prizes:clone(DEFAULT_PRIZES),spins:0,awarded:{},schedule:{},history:[],sound:true,volume:.7,theme:'dark',duration:6,
@@ -378,11 +382,12 @@ function decide(st){
     return due[0];
   }
   const commons=act.filter(p=>p.type==='comum'&&remaining(st,p)>0&&p.weight>0);
-  const total=commons.reduce((s,p)=>s+Number(p.weight),0);
+  const weighted=commons.map(p=>({p,w:Number(p.weight)*(Number.isFinite(remaining(st,p))?remaining(st,p):1)}));
+  const total=weighted.reduce((s,x)=>s+x.w,0);
   if(!total)return null;
   let r=Math.random()*total;
-  for(const p of commons){r-=p.weight;if(r<=0)return p}
-  return commons[commons.length-1];
+  for(const x of weighted){r-=x.w;if(r<=0)return x.p}
+  return weighted[weighted.length-1].p;
 }
 function commit(st,p){
   if(p){
@@ -401,7 +406,7 @@ let segs=[],rot=0,spinning=false,lastIdx=-1,dpr=1,size=600;
 const logos={};
 ['dark','light'].forEach(t=>{const i=new Image();i.src=document.querySelector('.logo-'+t).src;i.onload=()=>draw();logos[t]=i});
 function buildSegs(){
-  const act=S.prizes.filter(p=>p.active&&p.reps>0);
+  const act=S.prizes.filter(p=>p.active&&p.reps>0&&remaining(S,p)>0);
   const items=[];
   act.forEach((p,pi)=>{for(let r=0;r<p.reps;r++)items.push({p,pos:(r+.5+pi*.37/act.length)/p.reps})});
   items.sort((a,b)=>a.pos-b.pos);
@@ -493,6 +498,7 @@ const leadModal=document.getElementById('leadModal');
 const leadForm=document.getElementById('leadForm');
 function openLeadModal(){
   if(spinning)return;
+  if(!S.prizes.some(p=>p.active&&p.reps>0&&remaining(S,p)>0)){toast('Todos os brindes foram entregues. O evento foi encerrado.');return}
   closeDrawer();
   leadForm.querySelectorAll('.has-error').forEach(el=>el.classList.remove('has-error'));
   document.getElementById('leadStatus').textContent='';
@@ -574,7 +580,7 @@ function spin(){
 function finish(prize){
   commit(S,prize);rot=rot%(Math.PI*2);
   S.history.push({n:S.spins,id:prize.id,name:prize.name,type:prize.type,at:new Date().toISOString()});
-  save();renderAll();
+  save();buildSegs();renderAll();
   setTimeout(()=>showResult(prize),450);
 }
 function showResult(prize){
@@ -614,7 +620,7 @@ const $=id=>document.getElementById(id);
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),3200)}
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function renderLegend(){
-  $('legend').innerHTML='<li class="legend-title">Brindes da roleta</li>'+S.prizes.filter(p=>p.active).map(p=>`<li><span class="sw" style="background:${p.color}"></span>${esc(p.name)}</li>`).join('');
+  $('legend').innerHTML='<li class="legend-title">Brindes disponíveis</li>'+S.prizes.filter(p=>p.active&&remaining(S,p)>0).map(p=>{const left=remaining(S,p);return `<li><span class="sw" style="background:${p.color}"></span>${esc(p.name)} <span style="color:var(--t3)">(${left} ${left===1?'restante':'restantes'})</span></li>`}).join('');
   $('counter').innerHTML=S.spins?`<b>${S.spins}</b> ${S.spins===1?'giro':'giros'} até agora`:'';
   $('title').textContent=S.title;$('subtitle').textContent=S.subtitle;
 }
@@ -686,7 +692,7 @@ $('inVol').onchange=()=>sfx.tick();
 
 $('btnReset').onclick=()=>{if(!confirm('Zerar o evento? Contadores, blocos e histórico voltam para zero. Os brindes configurados continuam.'))return;
   Object.assign(S,{spins:0,awarded:{},schedule:{},history:[]});save();renderAll();toast('Evento zerado. Pode começar.')};
-$('btnDefaults').onclick=()=>{if(!confirm('Voltar para os 5 brindes padrão? Suas edições de brindes serão perdidas.'))return;
+$('btnDefaults').onclick=()=>{if(!confirm('Voltar para os 9 brindes padrão? Suas edições de brindes serão perdidas.'))return;
   S.prizes=clone(DEFAULT_PRIZES);S.schedule={};save();buildSegs();renderAll();toast('Brindes padrão restaurados.')};
 $('btnUndo').onclick=()=>{const last=S.history[S.history.length-1];if(!last)return;
   if(!confirm(`Desfazer o giro nº ${last.n} (${last.name})? Use só se o brinde não foi entregue.`))return;
