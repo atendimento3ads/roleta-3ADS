@@ -1,0 +1,6 @@
+---
+deployment:
+  tasks:
+    - export DEPLOYPATH=/home1/carlo589/roleta.3ads.com.br/
+    - /bin/mkdir -p $DEPLOYPATH
+    - /usr/bin/test "$PWD" = "${DEPLOYPATH%/}" || /bin/cp -f index.html "${DEPLOYPATH}index.html"
